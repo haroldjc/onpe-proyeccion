@@ -588,6 +588,101 @@ body {
   gap: 7px;
 }
 
+/* Regional table */
+.reg-intro {
+  margin: -4px 0 14px;
+  line-height: 1.5;
+}
+.reg-row {
+  display: grid;
+  grid-template-columns: 1.4fr 0.6fr 0.7fr 1.5fr 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+.reg-row:last-child {
+  border-bottom: 0;
+}
+.reg-head {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.reg-name {
+  font-weight: 600;
+}
+.reg-actas,
+.reg-jee {
+  text-align: right;
+  color: var(--muted);
+}
+.reg-lean .lean-pair {
+  display: inline-flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+.reg-lean .fp,
+.reg-net.fp {
+  color: var(--fp);
+}
+.reg-lean .jp,
+.reg-net.jp {
+  color: var(--jp);
+}
+.reg-lean .fp,
+.reg-lean .jp {
+  opacity: 0.65;
+}
+.reg-lean .lead {
+  opacity: 1;
+  font-weight: 700;
+}
+.reg-flag {
+  color: var(--warn);
+  cursor: help;
+}
+.reg-pend {
+  text-align: right;
+  font-weight: 600;
+}
+.reg-net {
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.reg-more {
+  margin-top: 2px;
+}
+.reg-more > summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 10px 6px 4px;
+}
+.reg-more > summary::-webkit-details-marker {
+  display: none;
+}
+.reg-more > summary::before {
+  content: "+ ";
+}
+.reg-more[open] > summary::before {
+  content: "– ";
+}
+@media (max-width: 640px) {
+  .reg-row {
+    grid-template-columns: 1.3fr 0.7fr 1.4fr 1fr;
+  }
+  .reg-jee {
+    display: none;
+  }
+}
+
 /* Footer */
 footer {
   margin-top: 26px;

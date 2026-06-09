@@ -36,6 +36,8 @@
     scenarios: document.getElementById("scenarios"),
     swingNote: document.getElementById("swingNote"),
     segments: document.getElementById("segments"),
+    regions: document.getElementById("regions"),
+    regionsCard: document.getElementById("regionsCard"),
     main: document.querySelector("main"),
     toast: document.getElementById("toast"),
   };
@@ -105,9 +107,25 @@
     }
     els.updatedLabel.title = new Date(upd).toLocaleString("es-PE");
 
+    // Region-weighted when we have regional data; fall back to the ámbito model.
+    var proj;
+    if (data.regions && data.regions.length) {
+      var nationalCounted = {};
+      data.national.candidatos.forEach(function (c) {
+        nationalCounted[c.key] = c.totalVotosValidos;
+      });
+      proj = P.buildScenariosByRegion(data.regions, data.extranjero, {
+        countedTotals: nationalCounted, // authoritative counted split
+        fallbackLean: P.currentLean(data.peru),
+      });
+    } else {
+      proj = P.buildScenarios({ peru: data.peru, extranjero: data.extranjero });
+    }
+
     renderCurrentCount(data.national);
-    renderProjection(data);
+    renderProjection(data, proj);
     renderSegments(data);
+    renderRegions(data, proj);
   }
 
   function renderCurrentCount(seg) {
@@ -163,8 +181,7 @@
     ].join("");
   }
 
-  function renderProjection(data) {
-    var proj = P.buildScenarios({ peru: data.peru, extranjero: data.extranjero });
+  function renderProjection(data, proj) {
     var exp = proj.expected;
     var winnerKey = exp.winnerKey;
     var top = exp.result[0];
@@ -211,27 +228,28 @@
     var flipNote = "";
     if (winnerKey !== nationalLeadKey) {
       flipNote =
-        " El proyectado <strong>invierte</strong> al líder del conteo actual: el voto del " +
-        "extranjero pendiente (que se inclina a " +
-        esc(partyFor("FP")) +
+        " El proyectado <strong>invierte</strong> al líder del conteo actual: el voto pendiente " +
+        "(que se inclina a " +
+        esc(partyFor(winnerKey)) +
         ") cambia el resultado.";
     }
 
+    var byRegion = proj.regionsUsed > 0;
     els.verdictNote.innerHTML =
       "Estimación basada en ~" +
       fmt(proj.remaining.total) +
-      " votos válidos por contabilizar (~" +
-      fmt(proj.remaining.peru) +
-      " en Perú, ~" +
-      fmt(proj.remaining.extranjero) +
-      " en el extranjero), repartidos según la tendencia actual de cada ámbito." +
+      " votos válidos por contabilizar, repartidos según la tendencia actual " +
+      (byRegion
+        ? "de cada <strong>región</strong> (" + proj.regionsUsed + " departamentos + extranjero)."
+        : "de cada ámbito.") +
       (proj.tooCloseToCall
         ? " Incluso en el escenario más favorable al perdedor el margen es mínimo, por eso se marca como demasiado reñido."
         : "") +
       flipNote;
 
     // Scenarios
-    els.swingNote.textContent = "banda ±" + proj.swingPts + " pts por ámbito";
+    els.swingNote.textContent =
+      "banda ±" + proj.swingPts + " pts por " + (proj.regionsUsed > 0 ? "región" : "ámbito");
     var swingA = document.getElementById("howtoSwingA");
     var swingB = document.getElementById("howtoSwingB");
     if (swingA) swingA.textContent = proj.swingPts + " pts";
@@ -272,8 +290,11 @@
   }
 
   // Expandable step-by-step calculation for one scenario, using the real
-  // breakdown numbers from projection.js.
+  // breakdown numbers from projection.js. Only the ámbito-level model attaches a
+  // per-scenario breakdown; in region mode the dedicated "Por región" table covers
+  // the detail, so this returns nothing.
   function scenarioCalc(data, s) {
+    if (!s.breakdown) return "";
     var rows = s.breakdown
       .map(function (seg) {
         var label = seg.label === "peru" ? "Perú" : "Extranjero";
@@ -382,7 +403,100 @@
       .join("");
   }
 
+  var TOP_REGIONS = 10;
+
+  // "Por región" table: each departamento (+ foreign) with its acta breakdown,
+  // current lean, estimated pending votes and net pending contribution. Sorted by
+  // estimated pending votes — i.e. where the remaining impact concentrates.
+  function renderRegions(data, proj) {
+    if (!els.regions) return;
+    if (!proj.breakdown || !proj.regionsUsed) {
+      // Ámbito-fallback mode: no regional data available.
+      els.regionsCard.style.display = "none";
+      return;
+    }
+    els.regionsCard.style.display = "";
+    var rows = proj.breakdown;
+    var head =
+      '<div class="reg-row reg-head">' +
+      '<span class="reg-name">Ámbito / región</span>' +
+      '<span class="reg-actas">% actas</span>' +
+      '<span class="reg-jee" title="Actas observadas enviadas al JEE / pendientes">obs · pend</span>' +
+      '<span class="reg-lean">Tendencia</span>' +
+      '<span class="reg-pend">Votos pend.</span>' +
+      "</div>";
+    var top = rows.slice(0, TOP_REGIONS).map(regionRow).join("");
+    var rest = rows.slice(TOP_REGIONS);
+    var more = rest.length
+      ? '<details class="reg-more"><summary>Ver todas (' +
+        rows.length +
+        ")</summary>" +
+        rest.map(regionRow).join("") +
+        "</details>"
+      : "";
+    els.regions.innerHTML = head + top + more;
+  }
+
+  function regionRow(b) {
+    var lead = num(b.lean.FP) >= num(b.lean.JP) ? "FP" : "JP";
+    var leanCell =
+      '<span class="lean-pair">' +
+      '<span class="' +
+      klass("FP") +
+      (lead === "FP" ? " lead" : "") +
+      '">FP ' +
+      pct(num(b.lean.FP) * 100, 1) +
+      "</span> · " +
+      '<span class="' +
+      klass("JP") +
+      (lead === "JP" ? " lead" : "") +
+      '">JP ' +
+      pct(num(b.lean.JP) * 100, 1) +
+      "</span>" +
+      (b.synthesizedLean ? ' <span class="reg-flag" title="Sin desglose por candidato; se usó la tendencia de Perú">≈</span>' : "") +
+      "</span>";
+    // Net pending direction (who the pending votes favor here).
+    var netKey = b.pendingNet >= 0 ? "JP" : "FP";
+    var netCell =
+      '<span class="reg-net ' +
+      klass(netKey) +
+      '">' +
+      (b.pendingNet >= 0 ? "+" : "−") +
+      fmt(Math.abs(b.pendingNet)) +
+      " " +
+      netKey +
+      "</span>";
+    return (
+      '<div class="reg-row">' +
+      '<span class="reg-name">' +
+      esc(titleCase(b.label || "")) +
+      "</span>" +
+      '<span class="reg-actas">' +
+      pct(num(b.actasContabilizadas), 1).replace("%", "") +
+      "%</span>" +
+      '<span class="reg-jee">' +
+      fmt(b.enviadasJee || 0) +
+      " · " +
+      fmt(b.pendientesJee || 0) +
+      "</span>" +
+      '<span class="reg-lean">' +
+      leanCell +
+      "</span>" +
+      '<span class="reg-pend">' +
+      fmt(b.remaining) +
+      "<br>" +
+      netCell +
+      "</span>" +
+      "</div>"
+    );
+  }
+
   // --- small DOM/format helpers ---------------------------------------------
+
+  function num(v) {
+    var n = typeof v === "number" ? v : parseFloat(v);
+    return isFinite(n) ? n : 0;
+  }
 
   function klass(key) {
     return key === "FP" ? "fp" : key === "JP" ? "jp" : "";

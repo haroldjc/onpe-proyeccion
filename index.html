@@ -58,28 +58,35 @@
             <summary>¿Cómo se calcula cada escenario?</summary>
             <ol class="howto-steps">
               <li>
-                <strong>Estimar lo que falta.</strong> Para cada ámbito (Perú y Extranjero) se
-                estiman los votos válidos pendientes:
+                <strong>Estimar lo que falta, por región.</strong> Para <strong>cada departamento</strong>
+                (y el extranjero) se estiman los votos válidos pendientes:
                 <code>válidos&nbsp;contados × (actas&nbsp;totales − contabilizadas) ÷ contabilizadas</code>.
+                Las actas que faltan incluyen las <em>observadas</em> (enviadas al JEE) y las que aún
+                no llegan.
               </li>
               <li>
-                <strong>Repartir los pendientes.</strong> Esos votos pendientes se asignan a cada
-                candidato según una <em>tendencia</em> (porcentaje) por ámbito.
+                <strong>Repartir los pendientes con la tendencia local.</strong> Los pendientes de cada
+                región se asignan según la <em>tendencia de esa misma región</em> — no un promedio
+                nacional. Importa porque Lima se inclina a Fujimori, Cusco a Sánchez, etc.
               </li>
               <li>
-                <strong>Sumar.</strong> Contados + pendientes asignados = proyección final; se
-                comparan los totales para ver quién gana.
+                <strong>Sumar todo.</strong> Contados + pendientes asignados de las 25 regiones + el
+                extranjero = proyección final; se compara para ver quién gana.
               </li>
             </ol>
             <p class="howto-diff">
               Lo único que cambia entre escenarios es la tendencia del paso 2:
             </p>
             <ul class="howto-list">
-              <li><span class="swatch jp"></span><strong>Optimista Sánchez</strong> — los pendientes de cada ámbito se inclinan <span id="howtoSwingA">3 pts</span> más hacia Sánchez que la tendencia actual.</li>
-              <li><span class="dot-neutral"></span><strong>Esperado</strong> — los pendientes se reparten igual que el conteo <em>actual</em> de cada ámbito (Perú ~50/50, Extranjero se inclina a Fujimori).</li>
+              <li><span class="swatch jp"></span><strong>Optimista Sánchez</strong> — los pendientes de cada región se inclinan <span id="howtoSwingA">3 pts</span> más hacia Sánchez que su tendencia actual.</li>
+              <li><span class="dot-neutral"></span><strong>Esperado</strong> — los pendientes se reparten igual que el conteo <em>actual</em> de cada región.</li>
               <li><span class="swatch fp"></span><strong>Optimista Fujimori</strong> — los pendientes se inclinan <span id="howtoSwingB">3 pts</span> más hacia Fujimori.</li>
             </ul>
-            <p class="howto-tip muted">Abre “Ver cálculo” en cada escenario para ver los números reales paso a paso.</p>
+            <p class="howto-tip muted">
+              Mira la tabla <strong>“Por región”</strong> abajo para los números reales de cada
+              departamento. Nota: no se modela cómo el JEE <em>resuelve</em> las actas observadas
+              (votos anulados o ajustados) — esa incertidumbre la cubre la banda ±.
+            </p>
           </details>
 
           <div class="scenarios" id="scenarios">
@@ -95,6 +102,22 @@
           </div>
           <div class="segments" id="segments">
             <div class="skeleton">Cargando ámbitos…</div>
+          </div>
+        </section>
+
+        <!-- Regional breakdown -->
+        <section class="card" id="regionsCard">
+          <div class="card-head">
+            <h2>Por región</h2>
+            <span class="muted">Dónde se concentra el voto pendiente y cómo se inclina</span>
+          </div>
+          <p class="reg-intro muted">
+            La proyección estima los votos pendientes de <strong>cada departamento</strong> con su
+            propia tendencia. <em>obs</em> = actas observadas en el JEE; <em>pend</em> = actas aún no
+            llegadas. Ordenado por votos pendientes estimados.
+          </p>
+          <div class="regions" id="regions">
+            <div class="skeleton">Cargando regiones…</div>
           </div>
         </section>
       </main>

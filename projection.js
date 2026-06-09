@@ -275,6 +275,162 @@
     };
   }
 
+  /**
+   * Region-weighted projection.
+   *
+   * Counted votes are taken as authoritative (from `options.countedTotals`, the
+   * national split) and never re-estimated. Only the *pending* votes are
+   * attributed per region: each region's estimated remaining × that region's own
+   * lean. This is what makes the model faithful — remaining votes both concentrate
+   * in some regions and lean differently — and robust: a region missing its lean
+   * only mis-attributes its small pending slice, never its counted votes.
+   *
+   *   final[k] = countedTotals[k] + Σ_segment ( remaining_seg × lean_seg[k] )
+   *
+   * regions:    [{ ubigeo, nombre, totales, candidatos }]
+   * extranjero: { totales, candidatos }  (single foreign segment, as today)
+   * options.countedTotals: { FP, JP } authoritative counted votes (national). If
+   *   omitted, derived by summing each segment's counted (needs all candidatos).
+   * options.fallbackLean: lean used for a region missing its candidate split.
+   *
+   * Returns the same shape as buildScenarios, plus a `breakdown` sorted by pending.
+   */
+  function buildScenariosByRegion(regions, extranjero, options) {
+    options = options || {};
+    var swing = options.swingPts != null ? options.swingPts : DEFAULT_SWING_PTS;
+    var closePts = options.closePts != null ? options.closePts : DEFAULT_CLOSE_PTS;
+    var fallbackLean = options.fallbackLean || null;
+
+    var segs = [];
+    (regions || []).forEach(function (r) {
+      segs.push({ label: r.nombre, kind: "region", ubigeo: r.ubigeo, totales: r.totales || {}, candidatos: (r.candidatos) || [] });
+    });
+    if (extranjero) {
+      segs.push({ label: "Extranjero", kind: "extranjero", ubigeo: null, totales: extranjero.totales || {}, candidatos: extranjero.candidatos || [] });
+    }
+
+    // Candidate keys: prefer the provided counted totals, else first segment lean.
+    var keys = options.countedTotals ? Object.keys(options.countedTotals) : [];
+    if (!keys.length) {
+      for (var i = 0; i < segs.length; i++) {
+        var l0 = currentLean(segs[i]);
+        if (Object.keys(l0).length) {
+          keys = Object.keys(l0);
+          break;
+        }
+      }
+    }
+    var fp = keys.indexOf("FP") !== -1 ? "FP" : keys[0];
+    var jp = keys.indexOf("JP") !== -1 ? "JP" : keys[1];
+
+    // Authoritative counted totals (exact). Fall back to summing segment counted.
+    var counted = options.countedTotals
+      ? Object.assign({}, options.countedTotals)
+      : segs.reduce(function (acc, s) {
+          return addVotes(acc, countedByCandidate(s));
+        }, {});
+
+    // Per-segment lean (own lean, or the fallback when a region lacks candidatos),
+    // remaining estimate, and whether the lean was a fallback.
+    var perSeg = segs.map(function (s) {
+      var hasCands = s.candidatos && s.candidatos.length;
+      var lean = hasCands ? currentLean(s) : fallbackLean || evenLean(keys);
+      return {
+        seg: s,
+        remaining: estimateRemainingValid(s),
+        lean: lean,
+        synth: !hasCands && !!fallbackLean,
+      };
+    });
+
+    function scenario(name, leanOf) {
+      var votes = Object.assign({}, counted);
+      perSeg.forEach(function (p) {
+        var lean = leanOf(p);
+        Object.keys(lean).forEach(function (k) {
+          votes[k] = num(votes[k]) + p.remaining * num(lean[k]);
+        });
+      });
+      var result = toResult(votes);
+      var winner = result[0] || { votes: 0, pct: 0, key: null };
+      var runnerUp = result[1] || { votes: 0, pct: 0, key: null };
+      return {
+        name: name,
+        result: result,
+        winnerKey: winner.key,
+        marginVotes: winner.votes - runnerUp.votes,
+        marginPct: winner.pct - runnerUp.pct,
+      };
+    }
+
+    var expected = scenario("expected", function (p) {
+      return p.lean;
+    });
+    var optimisticFP = scenario("optimisticFP", function (p) {
+      return shiftLean(p.lean, fp, swing);
+    });
+    var optimisticJP = scenario("optimisticJP", function (p) {
+      return shiftLean(p.lean, jp, swing);
+    });
+
+    var all = [expected, optimisticFP, optimisticJP];
+    var winners = {};
+    var minMarginPct = Infinity;
+    all.forEach(function (s) {
+      winners[s.winnerKey] = true;
+      if (s.marginPct < minMarginPct) minMarginPct = s.marginPct;
+    });
+    var scenariosDisagree = Object.keys(winners).length > 1;
+    var tooCloseToCall = scenariosDisagree || minMarginPct < closePts;
+
+    var totalRemaining = 0;
+    var breakdown = perSeg.map(function (p) {
+      totalRemaining += p.remaining;
+      var t = p.seg.totales || {};
+      return {
+        label: p.seg.label,
+        kind: p.seg.kind,
+        ubigeo: p.seg.ubigeo,
+        remaining: p.remaining,
+        lean: p.lean,
+        pendingNet: p.remaining * (num(p.lean[jp]) - num(p.lean[fp])),
+        actasContabilizadas: t.actasContabilizadas,
+        contabilizadas: t.contabilizadas,
+        totalActas: t.totalActas,
+        enviadasJee: t.enviadasJee,
+        pendientesJee: t.pendientesJee,
+        synthesizedLean: p.synth,
+      };
+    });
+    breakdown.sort(function (a, b) {
+      return b.remaining - a.remaining;
+    });
+
+    return {
+      remaining: { total: totalRemaining },
+      expected: expected,
+      optimisticFP: optimisticFP,
+      optimisticJP: optimisticJP,
+      scenarios: [optimisticJP, expected, optimisticFP],
+      tooCloseToCall: tooCloseToCall,
+      scenariosDisagree: scenariosDisagree,
+      minMarginPct: minMarginPct,
+      swingPts: swing,
+      closePts: closePts,
+      candidateKeys: { fp: fp, jp: jp },
+      breakdown: breakdown,
+      regionsUsed: (regions || []).length,
+    };
+  }
+
+  function evenLean(keys) {
+    var lean = {};
+    (keys || []).forEach(function (k) {
+      lean[k] = 1 / Math.max(1, keys.length);
+    });
+    return lean;
+  }
+
   // --- helpers ---------------------------------------------------------------
 
   function num(v) {
@@ -302,6 +458,7 @@
     projectSegment: projectSegment,
     buildScenario: buildScenario,
     buildScenarios: buildScenarios,
+    buildScenariosByRegion: buildScenariosByRegion,
     toResult: toResult,
     formatNumber: formatNumber,
     formatPct: formatPct,

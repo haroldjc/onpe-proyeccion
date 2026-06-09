@@ -27,21 +27,30 @@ No `npm install` — it uses only Node's built-in `http`/`fetch` (Node 18+).
 
 ## How the projection works
 
-The race is decided by where the remaining votes come from, and the two segments lean
-very differently (domestic ~50/50; foreign leans heavily Fuerza Popular while only
-~⅓ counted). The model, in [`projection.js`](./projection.js):
+The race is decided by where the remaining votes come from, and that varies sharply by
+region — Lima leans Fujimori, Cusco leans Sánchez, and foreign votes lean heavily
+Fujimori. So the model works **per departamento**, not per ámbito (`buildScenariosByRegion`
+in [`projection.js`](./projection.js)):
 
-1. For each ámbito, estimate pending valid votes as
-   `countedValid × (totalActas − contabilizadas) / contabilizadas`.
-2. Distribute those pending votes by that ámbito's **current** candidate lean
-   (the "esperado" scenario).
-3. Build an uncertainty band by shifting each ámbito's pending lean ±3 pts toward each
-   candidate (the two "optimista" scenarios). The single `DEFAULT_SWING_PTS` knob and a
-   `DEFAULT_CLOSE_PTS` threshold control the band and the too-close flag.
+1. For **each of the 25 departamentos + the foreign segment**, estimate pending valid
+   votes as `countedValid × (totalActas − contabilizadas) / contabilizadas`. The missing
+   actas include the **observed** ones in the JEE (`enviadasJee`) and not-yet-arrived
+   ones (`pendientesJee`).
+2. Distribute each region's pending votes by **that region's own current lean**
+   (the "esperado" scenario) — so a pending acta inherits its locale's tendency, not a
+   national average.
+3. Sum across all regions + foreign, and build an uncertainty band by shifting every
+   region's pending lean ±3 pts (the two "optimista" scenarios). The single
+   `DEFAULT_SWING_PTS` knob and a `DEFAULT_CLOSE_PTS` threshold control the band and the
+   too-close flag. The **"Por región"** table in the UI shows each region's numbers.
+
+If the per-region fetch degrades, the app falls back to an ámbito-level model
+(`buildScenarios`) so a projection always renders.
 
 **These figures are an unofficial estimate**, not a result. They assume pending actas
-carry a similar voter count to counted ones; foreign actas are smaller, so the foreign
-estimate is an upper bound — surfaced in the band rather than hidden.
+carry a similar voter count to counted ones. Crucially, the model does **not** predict
+how the JEE will *resolve* observed actas (vote annulments or adjustments) — that
+irreducible uncertainty is what the ±band stands in for.
 
 ## Deploy (free, on Render)
 

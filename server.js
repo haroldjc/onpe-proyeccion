@@ -17,7 +17,8 @@ const path = require("path");
 const PORT = process.env.PORT || 5173;
 const ONPE_BASE = "https://resultadosegundavuelta.onpe.gob.pe/presentacion-backend";
 const FALLBACK_ELECTION_ID = 10; // "SEGUNDA ELECCION PRESIDENCIAL 2026"
-const CACHE_TTL_MS = 20 * 1000;
+const CACHE_TTL_MS = 60 * 1000; // heavier (~55-call) snapshot → longer cache
+const REGION_CONCURRENCY = 8; // parallel upstream calls when fanning out by region
 
 // Geographic ámbito codes discovered in the ONPE bundle.
 const AMBITO = { PERU: 1, EXTRANJERO: 2 };
@@ -119,6 +120,7 @@ function normalizeTotales(data) {
     contabilizadas: d.contabilizadas,
     totalActas: d.totalActas,
     actasEnviadasJee: d.actasEnviadasJee,
+    enviadasJee: d.enviadasJee, // count of observed actas sent to the JEE
     actasPendientesJee: d.actasPendientesJee,
     pendientesJee: d.pendientesJee,
     participacionCiudadana: d.participacionCiudadana,
@@ -142,18 +144,92 @@ async function segmentSnapshot(electionId, ambito) {
   };
 }
 
+// Run an async fn over items with a bounded number of concurrent workers.
+// Returns results in input order; a thrown fn rejects the whole pool, so callers
+// pass an fn that catches and returns a sentinel when partial failure is OK.
+async function mapPool(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  const workers = [];
+  for (let w = 0; w < Math.min(limit, items.length); w++) workers.push(worker());
+  await Promise.all(workers);
+  return results;
+}
+
+async function fetchDepartamentos(electionId) {
+  const r = await onpeFetch(
+    "/ubigeos/departamentos?idEleccion=" + electionId + "&idAmbitoGeografico=" + AMBITO.PERU
+  );
+  return ((r && r.data) || []).map((d) => ({ ubigeo: d.ubigeo, nombre: d.nombre }));
+}
+
+// One departamento's snapshot. totales is required; if the per-region candidate
+// breakdown fails, we return candidatos:null and flag it so the projection can
+// fall back to the Perú ámbito lean for this region.
+async function regionSnapshot(electionId, dep) {
+  const common =
+    "?idEleccion=" + electionId + "&idAmbitoGeografico=" + AMBITO.PERU + "&tipoFiltro=ubigeo_nivel_01";
+  // The two endpoints take the departamento via DIFFERENT param names:
+  //  - resumen-general/totales                              → idUbigeoDepartamento
+  //  - eleccion-presidencial/participantes-ubicacion-geo... → ubigeoNivel1
+  const totalesQ = common + "&idUbigeoDepartamento=" + dep.ubigeo;
+  const partsQ = common + "&ubigeoNivel1=" + dep.ubigeo;
+  const totales = normalizeTotales(await onpeFetch("/resumen-general/totales" + totalesQ));
+  let candidatos = null;
+  let candidatosOk = false;
+  try {
+    const p = await onpeFetch("/eleccion-presidencial/participantes-ubicacion-geografica" + partsQ);
+    candidatos = normalizeCandidatos(p);
+    candidatosOk = candidatos.length > 0;
+  } catch (e) {
+    candidatosOk = false;
+  }
+  return { ubigeo: dep.ubigeo, nombre: dep.nombre, totales, candidatos, candidatosOk };
+}
+
 async function buildSnapshot() {
   const election = await resolveElectionId();
-  const [national, peru, extranjero] = await Promise.all([
+
+  // Header/summary + ámbito segments (also the fallback if regions degrade).
+  const [national, peru, extranjero, departamentos] = await Promise.all([
     segmentSnapshot(election.id, null),
     segmentSnapshot(election.id, AMBITO.PERU),
     segmentSnapshot(election.id, AMBITO.EXTRANJERO),
+    fetchDepartamentos(election.id).catch(() => []),
   ]);
+
+  // Fan out across departamentos with bounded concurrency. A region that fails
+  // entirely is dropped (null) rather than sinking the whole snapshot.
+  let regions = [];
+  if (departamentos.length) {
+    const fetched = await mapPool(departamentos, REGION_CONCURRENCY, (dep) =>
+      regionSnapshot(election.id, dep).catch(() => null)
+    );
+    regions = fetched.filter(Boolean);
+  }
+
+  // Completeness: do the regions we got reconcile to the Perú ámbito total?
+  const peruValid = (peru.totales && peru.totales.totalVotosValidos) || 0;
+  const regionsValid = regions.reduce(
+    (s, r) => s + ((r.totales && r.totales.totalVotosValidos) || 0),
+    0
+  );
+  const coverage = peruValid > 0 ? regionsValid / peruValid : 0;
+
   return {
     election: { id: election.id, nombre: election.nombre },
     national,
     peru,
     extranjero,
+    regions,
+    regionCoverage: coverage, // ~1.0 when all regions present
     fetchedAt: Date.now(),
   };
 }
