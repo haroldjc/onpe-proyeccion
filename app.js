@@ -97,7 +97,12 @@
     }
 
     var upd = data.national.totales.fechaActualizacion;
-    setStatus("ok", "Actualizado " + timeAgo(upd));
+    if (data.stale) {
+      // Server is serving last-good data because ONPE is momentarily unreachable.
+      setStatus("stale", "Actualizado " + timeAgo(upd) + " · reintentando");
+    } else {
+      setStatus("ok", "Actualizado " + timeAgo(upd));
+    }
     els.updatedLabel.title = new Date(upd).toLocaleString("es-PE");
 
     renderCurrentCount(data.national);

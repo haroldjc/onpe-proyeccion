@@ -65,8 +65,26 @@ Notes:
 - The free tier **sleeps after ~15 min idle**; the first request after sleeping
   takes ~30 s to cold-start, then it's fast again.
 - `PORT` is provided by Render and already read by `server.js` — nothing to set.
-- If ONPE ever blocks the host's datacenter IP (the proxy mimics a browser, so this
-  is unlikely), `/api/snapshot` would return a 502; the page keeps the last good data.
+- If ONPE is momentarily unreachable, the proxy serves the **last good snapshot**
+  (flagged `stale`) instead of failing, and the page shows a "reintentando" state.
+
+### Keeping it warm (avoid cold-start "Not found")
+
+Because the free service spins down when idle, the first visit after a quiet spell
+can briefly show Render's "Not Found" page (~30–60 s) while it wakes up. To avoid
+that, ping the app every ~10 minutes with a free uptime monitor so it never goes
+idle:
+
+1. Sign up for a free monitor — e.g. [UptimeRobot](https://uptimerobot.com) or
+   [cron-job.org](https://cron-job.org).
+2. Add an **HTTP(s)** monitor pointing at your app's root URL:
+   `https://onpe-proyeccion.onrender.com/`
+3. Set the interval to **5–10 minutes** (under Render's ~15-min idle window).
+
+The root path serves a static file and does **not** call ONPE, so these pings are
+cheap and won't add load to the upstream API. This keeps the service awake so
+visitors get an instant page instead of a cold start. (If you'd rather not run a
+pinger, Render's paid **Starter** tier removes spin-down entirely.)
 
 ## Data source
 

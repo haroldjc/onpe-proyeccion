@@ -52,21 +52,42 @@ const STATIC_FILES = {
   "/styles.css": { file: "styles.css", type: "text/css; charset=utf-8" },
 };
 
+// `payload` is the freshness-gated cache; `lastGood` is kept indefinitely so we
+// can serve it if ONPE has a transient hiccup (stale-while-error).
 let cache = { at: 0, payload: null };
+let lastGood = null;
 
+const FETCH_TIMEOUT_MS = 8000;
+const FETCH_RETRIES = 2; // total attempts = 1 + retries
+
+function delay(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+// Fetch one ONPE endpoint as JSON, with a hard timeout and a couple of retries.
+// ONPE/CloudFront intermittently returns the SPA HTML or is slow; retrying a
+// single flaky call keeps it from sinking the whole snapshot.
 async function onpeFetch(pathAndQuery) {
   const url = ONPE_BASE + pathAndQuery;
-  const res = await fetch(url, { headers: ONPE_HEADERS });
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error("ONPE " + res.status + " for " + pathAndQuery + ": " + text.slice(0, 120));
+  let lastErr;
+  for (let attempt = 0; attempt <= FETCH_RETRIES; attempt++) {
+    if (attempt > 0) await delay(250 * attempt);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { headers: ONPE_HEADERS, signal: ctrl.signal });
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error("ONPE " + res.status + " for " + pathAndQuery + ": " + text.slice(0, 120));
+      }
+      return JSON.parse(text); // throws if CloudFront served the SPA HTML
+    } catch (e) {
+      lastErr = e;
+    } finally {
+      clearTimeout(timer);
+    }
   }
-  try {
-    return JSON.parse(text);
-  } catch (e) {
-    // CloudFront served the SPA HTML instead of JSON.
-    throw new Error("Non-JSON response for " + pathAndQuery);
-  }
+  throw lastErr || new Error("Failed to fetch " + pathAndQuery);
 }
 
 async function resolveElectionId() {
@@ -142,9 +163,19 @@ async function getSnapshot() {
   if (cache.payload && now - cache.at < CACHE_TTL_MS) {
     return cache.payload;
   }
-  const payload = await buildSnapshot();
-  cache = { at: now, payload };
-  return payload;
+  try {
+    const payload = await buildSnapshot();
+    cache = { at: now, payload };
+    lastGood = payload;
+    return payload;
+  } catch (e) {
+    // Transient ONPE failure: serve the last good snapshot rather than nothing,
+    // flagged so the client can show a subtle "sin actualizar" state.
+    if (lastGood) {
+      return Object.assign({}, lastGood, { stale: true, staleReason: String(e.message || e) });
+    }
+    throw e;
+  }
 }
 
 function sendJson(res, status, obj) {
@@ -182,9 +213,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Quietly answer favicon requests so they don't show up as 404s.
+  if (urlPath === "/favicon.ico") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   const entry = STATIC_FILES[urlPath];
   if (entry) {
     serveStatic(res, entry);
+    return;
+  }
+
+  // Single-page app: serve index.html for any other GET so a stray path or a
+  // refresh never lands on a bare "Not found". Non-GET methods still 404.
+  if (req.method === "GET" || req.method === "HEAD") {
+    serveStatic(res, STATIC_FILES["/"]);
     return;
   }
 
