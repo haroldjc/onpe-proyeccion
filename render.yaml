@@ -1,0 +1,12 @@
+# Render Blueprint — lets you deploy in one click from the repo.
+# In Render: New → Blueprint → pick this repo. Render reads this file and
+# creates the service automatically. No code changes needed.
+services:
+  - type: web
+    name: onpe-proyeccion
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    autoDeploy: true
+    healthCheckPath: /

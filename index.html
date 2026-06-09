@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Proyección 2da Vuelta · Elecciones Perú 2026</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="topbar">
+        <div>
+          <h1 id="electionName">Segunda Elección Presidencial 2026</h1>
+          <p class="sub">Resultados oficiales ONPE · proyección no oficial del ganador</p>
+        </div>
+        <div class="status">
+          <span class="dot" id="liveDot" title="Actualización automática cada 60 s"></span>
+          <div class="status-text">
+            <span id="updatedLabel">Cargando…</span>
+            <button id="refreshBtn" class="refresh" type="button">Actualizar</button>
+          </div>
+        </div>
+      </header>
+
+      <main>
+        <!-- Verdict / projection headline -->
+        <section class="card verdict" id="verdictCard">
+          <div class="verdict-head">
+            <span class="kicker">Proyección — ganador más probable</span>
+            <span class="badge" id="verdictBadge"></span>
+          </div>
+          <div class="verdict-body" id="verdictBody">
+            <div class="skeleton">Calculando proyección…</div>
+          </div>
+          <p class="verdict-note" id="verdictNote"></p>
+        </section>
+
+        <!-- Current count -->
+        <section class="card">
+          <div class="card-head">
+            <h2>Conteo actual</h2>
+            <span class="muted" id="countProgress"></span>
+          </div>
+          <div class="candidates" id="currentCount">
+            <div class="skeleton">Cargando conteo…</div>
+          </div>
+          <div class="metrics" id="countMetrics"></div>
+        </section>
+
+        <!-- Scenarios -->
+        <section class="card">
+          <div class="card-head">
+            <h2>Escenarios de proyección</h2>
+            <span class="muted" id="swingNote"></span>
+          </div>
+
+          <details class="howto" id="howto">
+            <summary>¿Cómo se calcula cada escenario?</summary>
+            <ol class="howto-steps">
+              <li>
+                <strong>Estimar lo que falta.</strong> Para cada ámbito (Perú y Extranjero) se
+                estiman los votos válidos pendientes:
+                <code>válidos&nbsp;contados × (actas&nbsp;totales − contabilizadas) ÷ contabilizadas</code>.
+              </li>
+              <li>
+                <strong>Repartir los pendientes.</strong> Esos votos pendientes se asignan a cada
+                candidato según una <em>tendencia</em> (porcentaje) por ámbito.
+              </li>
+              <li>
+                <strong>Sumar.</strong> Contados + pendientes asignados = proyección final; se
+                comparan los totales para ver quién gana.
+              </li>
+            </ol>
+            <p class="howto-diff">
+              Lo único que cambia entre escenarios es la tendencia del paso 2:
+            </p>
+            <ul class="howto-list">
+              <li><span class="swatch jp"></span><strong>Optimista Sánchez</strong> — los pendientes de cada ámbito se inclinan <span id="howtoSwingA">3 pts</span> más hacia Sánchez que la tendencia actual.</li>
+              <li><span class="dot-neutral"></span><strong>Esperado</strong> — los pendientes se reparten igual que el conteo <em>actual</em> de cada ámbito (Perú ~50/50, Extranjero se inclina a Fujimori).</li>
+              <li><span class="swatch fp"></span><strong>Optimista Fujimori</strong> — los pendientes se inclinan <span id="howtoSwingB">3 pts</span> más hacia Fujimori.</li>
+            </ul>
+            <p class="howto-tip muted">Abre “Ver cálculo” en cada escenario para ver los números reales paso a paso.</p>
+          </details>
+
+          <div class="scenarios" id="scenarios">
+            <div class="skeleton">Cargando escenarios…</div>
+          </div>
+        </section>
+
+        <!-- Segment breakdown -->
+        <section class="card">
+          <div class="card-head">
+            <h2>Por ámbito</h2>
+            <span class="muted">Por qué la proyección difiere del conteo</span>
+          </div>
+          <div class="segments" id="segments">
+            <div class="skeleton">Cargando ámbitos…</div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <p>
+          Fuente de datos:
+          <a href="https://resultadosegundavuelta.onpe.gob.pe/main/resumen" target="_blank" rel="noopener"
+            >ONPE — Presentación de Resultados</a
+          >. Las proyecciones son una <strong>estimación no oficial</strong> calculada a partir de las
+          actas pendientes y su tendencia por ámbito; no representan un resultado definitivo.
+        </p>
+      </footer>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="/projection.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
